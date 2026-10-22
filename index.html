@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カスタム画像スライドパズル</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+        }
+        /* ピースのトランジションアニメーション */
+        .puzzle-piece {
+            transition: transform 0.18s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.2s ease;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .puzzle-piece:hover {
+            filter: brightness(1.08);
+        }
+        .puzzle-piece:active {
+            transform: scale(0.97);
+        }
+        /* コンフェッティ用キャンバス */
+        #confetti-canvas {
+            pointer-events: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- コンフェッティ用Canvas -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- ヘッダー -->
+    <header class="border-b border-slate-800 bg-slate-950/60 backdrop-blur-md sticky top-0 z-20">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <i class="fa-solid font-bold fa-puzzle-piece text-xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg md:text-xl tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">スライドパズル</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">お気に入りの画像でパズルを楽しもう</p>
+                </div>
+            </div>
+            
+            <!-- スコア/ステータス表示 -->
+            <div class="flex items-center space-x-4 text-sm font-semibold">
+                <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
+                    <i class="fa-regular fa-clock text-indigo-400"></i>
+                    <span id="timer-display" class="font-mono text-base">00:00</span>
+                </div>
+                <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
+                    <i class="fa-solid fa-footsteps text-emerald-400"></i>
+                    <span id="moves-display" class="font-mono text-base">0</span>
+                    <span class="text-xs text-slate-400 font-normal">手</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="max-w-5xl mx-auto w-full px-4 py-6 flex-1 flex flex-col md:flex-row gap-8 items-center md:items-start justify-center">
+
+        <!-- 左側：コントロールパネル / 設定 -->
+        <div class="w-full md:w-80 flex flex-col gap-5 order-2 md:order-1">
+            
+            <!-- 難易度（グリッド）選択 -->
+            <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 shadow-xl backdrop-blur-sm">
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">難易度 (サイズ)</label>
+                <div class="grid grid-cols-3 gap-2" id="grid-selector">
+                    <button data-size="3" class="grid-btn active py-2.5 px-3 rounded-xl text-xs font-bold transition-all border border-indigo-500/50 bg-indigo-600/30 text-indigo-200 shadow-inner">
+                        3 × 3<br><span class="text-[10px] font-normal opacity-75">かんたん</span>
+                    </button>
+                    <button data-size="4" class="grid-btn py-2.5 px-3 rounded-xl text-xs font-bold transition-all border border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-700/50">
+                        4 × 4<br><span class="text-[10px] font-normal opacity-75">ふつう</span>
+                    </button>
+                    <button data-size="5" class="grid-btn py-2.5 px-3 rounded-xl text-xs font-bold transition-all border border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-700/50">
+                        5 × 5<br><span class="text-[10px] font-normal opacity-75">むずかしい</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 画像選択エリア -->
+            <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 shadow-xl backdrop-blur-sm flex flex-col gap-4">
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">画像の選択</label>
+                
+                <!-- ドロップエリア -->
+                <div id="drop-zone" class="border-2 border-dashed border-slate-600 hover:border-indigo-400 transition-colors rounded-xl p-4 text-center cursor-pointer bg-slate-900/40 hover:bg-slate-900/70 group">
+                    <input type="file" id="file-input" accept="image/*" class="hidden">
+                    <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 group-hover:text-indigo-400 transition-colors mb-1"></i>
+                    <p class="text-xs font-medium text-slate-300">クリックまたはドラッグ＆ドロップ</p>
+                    <p class="text-[10px] text-slate-500 mt-1">JPEG, PNG, WebP対応</p>
+                </div>
+
+                <!-- サンプル画像 -->
+                <div>
+                    <span class="text-xs font-semibold text-slate-400 block mb-2">サンプル画像から選ぶ:</span>
+                    <div class="grid grid-cols-4 gap-2" id="sample-images">
+                        <!-- JSで動的に追加、または直接記述 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- アクション・表示切り替え -->
+            <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 shadow-xl backdrop-blur-sm flex flex-col gap-3">
+                <button id="btn-shuffle" class="w-full py-3 px-4 rounded-xl font-bold bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-shuffle"></i> シャッフルして開始
+                </button>
+                
+                <div class="grid grid-cols-2 gap-2 mt-1">
+                    <button id="btn-hint" class="py-2 px-3 rounded-xl text-xs font-semibold bg-slate-700/60 hover:bg-slate-700 text-slate-200 border border-slate-600/50 transition flex items-center justify-center gap-1.5">
+                        <i class="fa-regular fa-lightbulb text-amber-400"></i> お手本画像
+                    </button>
+                    <button id="btn-numbers" class="py-2 px-3 rounded-xl text-xs font-semibold bg-slate-700/60 hover:bg-slate-700 text-slate-200 border border-slate-600/50 transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-hashtag text-sky-400"></i> 番号表示
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右側：パズルボードエリア -->
+        <div class="w-full flex-1 flex flex-col items-center order-1 md:order-2">
+            
+            <!-- パズル枠容器（正方形を維持） -->
+            <div class="relative w-full max-w-[480px] aspect-square bg-slate-950 rounded-2xl p-2 md:p-3 border-2 border-slate-700/80 shadow-2xl shadow-black/50 overflow-hidden flex items-center justify-center">
+                
+                <!-- 実際のパズル盤面 -->
+                <div id="puzzle-board" class="relative w-full h-full rounded-xl overflow-hidden bg-slate-900">
+                    <!-- ピースはJavaScriptで生成 -->
+                </div>
+
+                <!-- お手本（ヒント）オーバーレイ -->
+                <div id="hint-overlay" class="absolute inset-2 md:inset-3 rounded-xl overflow-hidden bg-black/90 backdrop-blur-sm z-30 opacity-0 pointer-events-none transition-opacity duration-300 flex flex-col items-center justify-center p-4">
+                    <img id="hint-image" src="" alt="完成見本" class="max-w-full max-h-[85%] object-contain rounded-lg border border-slate-600 shadow-2xl">
+                    <p class="text-xs text-slate-300 font-semibold mt-3 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700">完成お手本（クリックで閉じる）</p>
+                </div>
+
+                <!-- クリア演出モーダル（ボード上） -->
+                <div id="victory-modal" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md z-40 flex flex-col items-center justify-center p-6 text-center opacity-0 pointer-events-none transition-all duration-500 transform scale-95">
+                    <div class="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl mb-4 border border-emerald-500/30 animate-bounce">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <h2 class="text-2xl font-black text-white mb-1 tracking-wide">ステージクリア！</h2>
+                    <p class="text-slate-400 text-xs mb-6">おめでとうございます！パズルを完成させました。</p>
+
+                    <div class="grid grid-cols-2 gap-4 w-full max-w-xs mb-6">
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                            <span class="text-[10px] text-slate-500 block uppercase font-bold">クリアタイム</span>
+                            <span id="final-time" class="text-lg font-mono font-bold text-indigo-400">00:00</span>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                            <span class="text-[10px] text-slate-500 block uppercase font-bold">総手数</span>
+                            <span id="final-moves" class="text-lg font-mono font-bold text-emerald-400">0</span>
+                        </div>
+                    </div>
+
+                    <button id="btn-play-again" class="py-3 px-8 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 active:scale-95 transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-rotate-right"></i> もう一度遊ぶ
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- 操作ヘルプ -->
+            <p class="text-xs text-slate-500 mt-4 text-center">
+                <i class="fa-solid fa-circle-info mr-1"></i> 空白スペースの隣にあるピースをクリック・タップして移動させます
+            </p>
+
+        </div>
+
+    </main>
+
+    <!-- フッター -->
+    <footer class="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
+        <p>Image Slide Puzzle Web Application</p>
+    </footer>
+
+    <!-- JS ロジック -->
+    <script>
+        // サンプル画像データ (SVGデータURIによる高品質な内蔵画像生成)
+        const SAMPLE_IMAGES = [
+            {
+                name: '富士山と桜',
+                url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><defs><linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%230f172a"/><stop offset="40%" stop-color="%23312e81"/><stop offset="80%" stop-color="%234c1d95"/><stop offset="100%" stop-color="%23831843"/></linearGradient><linearGradient id="fuji" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23e0e7ff"/><stop offset="25%" stop-color="%233730a3"/><stop offset="100%" stop-color="%231e1b4b"/></linearGradient></defs><rect width="600" height="600" fill="url(%23sky)"/><circle cx="480" cy="180" r="45" fill="%23fef08a" opacity="0.9"/><polygon points="120,480 300,200 480,480" fill="url(%23fuji)"/><polygon points="250,277 300,200 350,277 330,300 300,280 270,300" fill="%23ffffff"/><rect y="450" width="600" height="150" fill="%23064e3b"/><circle cx="100" cy="380" r="25" fill="%23f472b6" opacity="0.8"/><circle cx="120" cy="360" r="30" fill="%23f472b6" opacity="0.8"/><circle cx="140" cy="390" r="20" fill="%23fb7185" opacity="0.8"/><path d="M 80,480 Q 110,400 120,360" stroke="%23451a03" stroke-width="8" fill="none"/></svg>'
+            },
+            {
+                name: 'サイバーパンクシティ',
+                url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23050515"/><stop offset="100%" stop-color="%231a0b2e"/></linearGradient></defs><rect width="600" height="600" fill="url(%23bg)"/><rect x="50" y="150" width="100" height="450" fill="%230f172a" stroke="%2306b6d4" stroke-width="2"/><rect x="180" y="80" width="140" height="520" fill="%230f172a" stroke="%23ec4899" stroke-width="2"/><rect x="350" y="220" width="90" height="380" fill="%230f172a" stroke="%233b82f6" stroke-width="2"/><rect x="460" y="120" width="110" height="480" fill="%230f172a" stroke="%23a855f7" stroke-width="2"/><circle cx="300" cy="200" r="120" fill="none" stroke="%23f43f5e" stroke-width="6" opacity="0.6"/><line x1="0" y1="480" x2="600" y2="480" stroke="%2306b6d4" stroke-width="3"/><line x1="0" y1="520" x2="600" y2="520" stroke="%23ec4899" stroke-width="2"/></svg>'
+            },
+            {
+                name: 'トロピカルビーチ',
+                url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><defs><linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%2338bdf8"/><stop offset="100%" stop-color="%23bae6fd"/></linearGradient><linearGradient id="sea" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%230284c7"/><stop offset="100%" stop-color="%230f766e"/></linearGradient></defs><rect width="600" height="320" fill="url(%23sky)"/><circle cx="120" cy="100" r="50" fill="%23fde047"/><rect y="320" width="600" height="150" fill="url(%23sea)"/><path d="M 0,440 Q 200,420 600,470 L 600,600 L 0,600 Z" fill="%23fde68a"/><circle cx="480" cy="280" r="70" fill="%2315803d" opacity="0.7"/><path d="M 550,500 Q 500,380 480,280" stroke="%2378350f" stroke-width="14" fill="none"/></svg>'
+            },
+            {
+                name: '抽象グラデーション',
+                url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><defs><linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%236366f1"/><stop offset="50%" stop-color="%23a855f7"/><stop offset="100%" stop-color="%23ec4899"/></linearGradient></defs><rect width="600" height="600" fill="url(%23g1)"/><circle cx="180" cy="180" r="140" fill="%2338bdf8" opacity="0.4"/><circle cx="420" cy="400" r="180" fill="%23f43f5e" opacity="0.4"/><path d="M 0,300 Q 300,100 600,300 T 1200,300" fill="none" stroke="%23ffffff" stroke-width="8" opacity="0.3"/></svg>'
+            }
+        ];
+
+        // アプリケーション状態管理
+        const state = {
+            gridSize: 3,           // 3x3, 4x4, 5x5
+            tiles: [],              // 現在の盤面配列 [0...N-1] (空きは N-1)
+            emptyIndex: 0,          // 空白ピースのインデックス
+            currentImageSrc: '',   // 使用中の画像URL
+            moves: 0,
+            isPlaying: false,
+            showNumbers: true,
+            timer: 0,
+            timerInterval: null
+        };
+
+        // DOM要素
+        const boardEl = document.getElementById('puzzle-board');
+        const timerDisplay = document.getElementById('timer-display');
+        const movesDisplay = document.getElementById('moves-display');
+        const gridSelector = document.getElementById('grid-selector');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const sampleImagesEl = document.getElementById('sample-images');
+        const btnShuffle = document.getElementById('btn-shuffle');
+        const btnHint = document.getElementById('btn-hint');
+        const btnNumbers = document.getElementById('btn-numbers');
+        const hintOverlay = document.getElementById('hint-overlay');
+        const hintImage = document.getElementById('hint-image');
+        const victoryModal = document.getElementById('victory-modal');
+        const finalTime = document.getElementById('final-time');
+        const finalMoves = document.getElementById('final-moves');
+        const btnPlayAgain = document.getElementById('btn-play-again');
+
+        // 初期化処理
+        function init() {
+            renderSampleThumbnails();
+            state.currentImageSrc = SAMPLE_IMAGES[0].url;
+            setupEventListeners();
+            resetGame();
+        }
+
+        // サンプルサムネイル生成
+        function renderSampleThumbnails() {
+            sampleImagesEl.innerHTML = '';
+            SAMPLE_IMAGES.forEach((sample, idx) => {
+                const imgBtn = document.createElement('button');
+                imgBtn.className = `relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${idx === 0 ? 'border-indigo-500 scale-95 shadow-md' : 'border-transparent opacity-70 hover:opacity-100'}`;
+                imgBtn.innerHTML = `<img src="${sample.url}" alt="${sample.name}" class="w-full h-full object-cover">`;
+                imgBtn.addEventListener('click', () => {
+                    document.querySelectorAll('#sample-images button').forEach(b => {
+                        b.classList.remove('border-indigo-500', 'scale-95', 'shadow-md');
+                        b.classList.add('border-transparent', 'opacity-70');
+                    });
+                    imgBtn.classList.remove('border-transparent', 'opacity-70');
+                    imgBtn.classList.add('border-indigo-500', 'scale-95', 'shadow-md');
+                    
+                    state.currentImageSrc = sample.url;
+                    resetGame();
+                });
+                sampleImagesEl.appendChild(imgBtn);
+            });
+        }
+
+        // イベントリスナー設定
+        function setupEventListeners() {
+            // グリッドサイズ切り替え
+            gridSelector.addEventListener('click', (e) => {
+                const btn = e.target.closest('.grid-btn');
+                if (!btn) return;
+                
+                document.querySelectorAll('.grid-btn').forEach(b => {
+                    b.classList.remove('active', 'border-indigo-500/50', 'bg-indigo-600/30', 'text-indigo-200', 'shadow-inner');
+                    b.classList.add('border-slate-700', 'bg-slate-800/60', 'text-slate-300');
+                });
+                btn.classList.remove('border-slate-700', 'bg-slate-800/60', 'text-slate-300');
+                btn.classList.add('active', 'border-indigo-500/50', 'bg-indigo-600/30', 'text-indigo-200', 'shadow-inner');
+
+                state.gridSize = parseInt(btn.dataset.size, 10);
+                resetGame();
+            });
+
+            // ファイルドラッグ＆ドロップ / アップロード
+            dropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-indigo-500', 'bg-indigo-500/10');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                }
+            });
+
+            // コントロールボタン
+            btnShuffle.addEventListener('click', () => startNewGame());
+            
+            // ヒント表示（お手本画像）
+            btnHint.addEventListener('click', () => {
+                hintImage.src = state.currentImageSrc;
+                hintOverlay.classList.remove('opacity-0', 'pointer-events-none');
+            });
+            hintOverlay.addEventListener('click', () => {
+                hintOverlay.classList.add('opacity-0', 'pointer-events-none');
+            });
+
+            // 番号表示トグル
+            btnNumbers.addEventListener('click', () => {
+                state.showNumbers = !state.showNumbers;
+                btnNumbers.classList.toggle('bg-indigo-600/40', state.showNumbers);
+                btnNumbers.classList.toggle('border-indigo-500/50', state.showNumbers);
+                renderBoardPositions();
+            });
+
+            // クリア後再挑戦
+            btnPlayAgain.addEventListener('click', () => {
+                victoryModal.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+                startNewGame();
+            });
+        }
+
+        // ユーザー選択ファイルの読み込み
+        function handleFileSelect(file) {
+            if (!file.type.match('image.*')) {
+                alert('画像ファイル（JPEG, PNG, WebPなど）を選択してください。');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                state.currentImageSrc = e.target.result;
+                // サンプル選択のハイライト枠解除
+                document.querySelectorAll('#sample-images button').forEach(b => {
+                    b.classList.remove('border-indigo-500', 'scale-95', 'shadow-md');
+                    b.classList.add('border-transparent', 'opacity-70');
+                });
+                resetGame();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // ゲームリセット（完成初期状態に戻す）
+        function resetGame() {
+            stopTimer();
+            state.moves = 0;
+            state.isPlaying = false;
+            movesDisplay.textContent = '0';
+            timerDisplay.textContent = '00:00';
+            victoryModal.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+
+            const total = state.gridSize * state.gridSize;
+            state.tiles = Array.from({ length: total }, (_, i) => i);
+            state.emptyIndex = total - 1; // 最後のマスコットを空き扱い
+
+            buildBoardDOM();
+        }
+
+        // 新規ゲーム開始（シャッフル）
+        function startNewGame() {
+            resetGame();
+            shuffleTiles();
+            state.moves = 0;
+            movesDisplay.textContent = '0';
+            state.isPlaying = true;
+            startTimer();
+        }
+
+        // 盤面DOMの構築
+        function buildBoardDOM() {
+            boardEl.innerHTML = '';
+            const size = state.gridSize;
+
+            for (let i = 0; i < size * size; i++) {
+                const piece = document.createElement('div');
+                piece.className = 'puzzle-piece absolute rounded-lg overflow-hidden cursor-pointer shadow-md border border-white/10';
+                piece.dataset.tileVal = i;
+
+                // 画像部分の表示
+                const img = document.createElement('div');
+                img.className = 'w-full h-full bg-no-repeat';
+                img.style.backgroundImage = `url("${state.currentImageSrc}")`;
+                img.style.backgroundSize = `${size * 100}% ${size * 100}%`;
+
+                // 正しい位置に応じた背景オフセット設定
+                const correctRow = Math.floor(i / size);
+                const correctCol = i % size;
+                const percentX = size > 1 ? (correctCol / (size - 1)) * 100 : 0;
+                const percentY = size > 1 ? (correctRow / (size - 1)) * 100 : 0;
+                img.style.backgroundPosition = `${percentX}% ${percentY}%`;
+
+                // ピース番号バッジ
+                const badge = document.createElement('span');
+                badge.className = 'number-badge absolute top-1 left-1 bg-black/60 backdrop-blur-md text-white font-bold text-[10px] md:text-xs px-1.5 py-0.5 rounded-md border border-white/20 pointer-events-none transition-opacity';
+                badge.textContent = i + 1;
+
+                piece.appendChild(img);
+                piece.appendChild(badge);
+
+                // タップ / クリックイベント
+                piece.addEventListener('click', () => handlePieceClick(i));
+
+                boardEl.appendChild(piece);
+            }
+
+            renderBoardPositions();
+        }
+
+        // 各ピースの位置・スタイル反映
+        function renderBoardPositions() {
+            const size = state.gridSize;
+            const piecePercent = 100 / size;
+            const total = size * size;
+
+            const pieces = boardEl.querySelectorAll('.puzzle-piece');
+            pieces.forEach(piece => {
+                const tileVal = parseInt(piece.dataset.tileVal, 10);
+                const currentIndex = state.tiles.indexOf(tileVal);
+
+                const row = Math.floor(currentIndex / size);
+                const col = currentIndex % size;
+
+                // 位置指定
+                piece.style.width = `calc(${piecePercent}% - 4px)`;
+                piece.style.height = `calc(${piecePercent}% - 4px)`;
+                piece.style.transform = `translate3d(calc(${col * 100}% + ${col * 4}px), calc(${row * 100}% + ${row * 4}px), 0)`;
+                piece.style.margin = '2px';
+
+                // 空白ピース隠し
+                if (tileVal === total - 1) {
+                    piece.style.opacity = '0';
+                    piece.style.pointerEvents = 'none';
+                } else {
+                    piece.style.opacity = '1';
+                    piece.style.pointerEvents = 'auto';
+                }
+
+                // 番号非表示切替
+                const badge = piece.querySelector('.number-badge');
+                if (badge) {
+                    badge.style.opacity = state.showNumbers ? '1' : '0';
+                }
+            });
+        }
+
+        // 有効なランダム移動でシャッフル（確実に解ける状態にする）
+        function shuffleTiles() {
+            const size = state.gridSize;
+            const total = size * size;
+            let movesCount = size * size * 25; // サイズに応じた十分な移動回数
+            let lastMovedTile = -1;
+
+            for (let i = 0; i < movesCount; i++) {
+                const neighbors = getValidNeighbors(state.emptyIndex, size);
+                // 直前に動かしたピース以外を優先選出（無駄な往復を減少）
+                const filtered = neighbors.filter(idx => state.tiles[idx] !== lastMovedTile);
+                const targetIndex = filtered.length > 0 
+                    ? filtered[Math.floor(Math.random() * filtered.length)]
+                    : neighbors[Math.floor(Math.random() * neighbors.length)];
+
+                lastMovedTile = state.tiles[targetIndex];
+                
+                // 配列内入れ替え
+                state.tiles[state.emptyIndex] = state.tiles[targetIndex];
+                state.tiles[targetIndex] = total - 1;
+                state.emptyIndex = targetIndex;
+            }
+
+            renderBoardPositions();
+        }
+
+        // 隣接するインデックスの取得
+        function getValidNeighbors(index, size) {
+            const row = Math.floor(index / size);
+            const col = index % size;
+            const neighbors = [];
+
+            if (row > 0) neighbors.push(index - size); // 上
+            if (row < size - 1) neighbors.push(index + size); // 下
+            if (col > 0) neighbors.push(index - 1); // 左
+            if (col < size - 1) neighbors.push(index + 1); // 右
+
+            return neighbors;
+        }
+
+        // ピースクリック時の移動制御
+        function handlePieceClick(tileVal) {
+            if (!state.isPlaying) return;
+
+            const currentIndex = state.tiles.indexOf(tileVal);
+            const neighbors = getValidNeighbors(state.emptyIndex, state.gridSize);
+
+            // 空白と隣接している場合のみ移動
+            if (neighbors.includes(currentIndex)) {
+                // 配列要素交換
+                state.tiles[state.emptyIndex] = tileVal;
+                state.tiles[currentIndex] = state.gridSize * state.gridSize - 1;
+                state.emptyIndex = currentIndex;
+
+                state.moves++;
+                movesDisplay.textContent = state.moves;
+
+                renderBoardPositions();
+
+                // クリア判定
+                checkWinCondition();
+            }
+        }
+
+        // 勝利判定
+        function checkWinCondition() {
+            const isWin = state.tiles.every((val, index) => val === index);
+            if (isWin) {
+                state.isPlaying = false;
+                stopTimer();
+
+                // 空白ピースを表示して一枚絵を完成させる
+                const total = state.gridSize * state.gridSize;
+                const lastPiece = boardEl.querySelector(`[data-tile-val="${total - 1}"]`);
+                if (lastPiece) {
+                    lastPiece.style.opacity = '1';
+                }
+
+                // 祝福演出
+                setTimeout(() => {
+                    triggerConfetti();
+                    finalTime.textContent = timerDisplay.textContent;
+                    finalMoves.textContent = state.moves;
+                    victoryModal.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+                }, 300);
+            }
+        }
+
+        // タイマー処理
+        function startTimer() {
+            stopTimer();
+            state.timer = 0;
+            state.timerInterval = setInterval(() => {
+                state.timer++;
+                const mins = String(Math.floor(state.timer / 60)).padStart(2, '0');
+                const secs = String(state.timer % 60).padStart(2, '0');
+                timerDisplay.textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (state.timerInterval) {
+                clearInterval(state.timerInterval);
+                state.timerInterval = null;
+            }
+        }
+
+        // コンフェッティ（紙吹雪）エフェクト
+        function triggerConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const particles = [];
+            const colors = ['#6366f1', '#a855f7', '#ec4899', '#10b981', '#f59e0b', '#3b82f6'];
+
+            for (let i = 0; i < 120; i++) {
+                particles.push({
+                    x: canvas.width / 2,
+                    y: canvas.height / 2,
+                    vx: (Math.random() - 0.5) * 18,
+                    vy: (Math.random() - 0.7) * 18,
+                    size: Math.random() * 8 + 4,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    rotation: Math.random() * 360,
+                    rSpeed: (Math.random() - 0.5) * 10,
+                    opacity: 1
+                });
+            }
+
+            let animationFrame;
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let alive = false;
+
+                particles.forEach(p => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.3; // 重力
+                    p.vx *= 0.98;
+                    p.rotation += p.rSpeed;
+                    p.opacity -= 0.008;
+
+                    if (p.opacity > 0) {
+                        alive = true;
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate((p.rotation * Math.PI) / 180);
+                        ctx.globalAlpha = Math.max(0, p.opacity);
+                        ctx.fillStyle = p.color;
+                        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                        ctx.restore();
+                    }
+                });
+
+                if (alive) {
+                    animationFrame = requestAnimationFrame(animate);
+                } else {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    cancelAnimationFrame(animationFrame);
+                }
+            }
+
+            animate();
+        }
+
+        // リサイズ時処理
+        window.addEventListener('resize', () => {
+            const canvas = document.getElementById('confetti-canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // アプリ起動
+        window.onload = init;
+    </script>
+</body>
+</html>
